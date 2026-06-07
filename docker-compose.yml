@@ -1,0 +1,118 @@
+services:
+  # =====================
+  # PostgreSQL
+  # =====================
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-peakssh}
+      POSTGRES_USER: ${POSTGRES_USER:-peakssh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-peakssh} -d ${POSTGRES_DB:-peakssh}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - peakssh
+
+  # =====================
+  # Sync Backend
+  # =====================
+  sync-backend:
+    image: ${SYNC_BACKEND_IMAGE:-ghcr.io/peakssh/peakssh-sync-backend:latest}
+    restart: unless-stopped
+    profiles:
+      - sync-backend
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-peakssh}
+      DATABASE_USER: ${DATABASE_USER:-peakssh}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+    ports:
+      - "${SYNC_BACKEND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - peakssh
+
+  # =====================
+  # Proxy (peakssh-proxy-rust)
+  # =====================
+  proxy:
+    image: ${PROXY_IMAGE:-ghcr.io/peakssh/peakssh-proxy-rust:latest}
+    restart: unless-stopped
+    profiles:
+      - proxy
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-peakssh}
+      DATABASE_USER: ${DATABASE_USER:-peakssh}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+    ports:
+      - "${PROXY_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - peakssh
+
+  # =====================
+  # Webapp
+  # =====================
+  webapp:
+    image: ${WEBAPP_IMAGE:-ghcr.io/peakssh/peakssh-webapp:latest}
+    restart: unless-stopped
+    profiles:
+      - webapp
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-peakssh}
+      DATABASE_USER: ${DATABASE_USER:-peakssh}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+    ports:
+      - "${WEBAPP_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - peakssh
+
+  # =====================
+  # Marketplace Backend
+  # =====================
+  marketplace:
+    image: ${MARKETPLACE_IMAGE:-ghcr.io/peakssh/peakssh-marketplace-backend:latest}
+    restart: unless-stopped
+    profiles:
+      - marketplace
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-peakssh}
+      DATABASE_USER: ${DATABASE_USER:-peakssh}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+    ports:
+      - "${MARKETPLACE_PORT:-3002}:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - peakssh
+
+volumes:
+  postgres_data:
+
+networks:
+  peakssh:
+    name: ${NETWORK_NAME:-peakssh-network}
